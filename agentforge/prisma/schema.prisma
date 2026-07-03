@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  prompt      String   @default("")
+  status      String   @default("draft")
+  files       String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    Message[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String
+  content   String
+  metadata  String   @default("{}")
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  category    String   @default("general")
+  version     String   @default("1.0.0")
+  author      String   @default("community")
+  source      String   @default("built-in")
+  config      String   @default("{}")
+  installed   Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MCPServer {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  command     String
+  args        String   @default("[]")
+  env         String   @default("{}")
+  category    String   @default("general")
+  enabled     Boolean  @default(true)
+  connected   Boolean  @default(false)
+  tools       String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Next.js
+agentforge/.next/
+.next/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+prisma/dev.db
+
+# Sessions & workspace (generated content)
+agentforge/sessions/
+agentforge/workspace/
+
+# Environment
+.env
+.env.local
+.z-ai-config
+
+# Logs & build artifacts
+*.log
+dev.log
+dev.pid
+*.tsbuildinfo
+
+# Large dump files
+all-code-dump.txt
+
+# Misc
+.DS_Store
