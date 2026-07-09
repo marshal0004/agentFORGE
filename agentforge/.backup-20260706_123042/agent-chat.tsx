@@ -202,26 +202,39 @@ function ToolCallCard({ action, index }: { action: ToolAction; index: number }) 
 // ── Action Summary Bar ─────────────────────────────────────────────────────────
 
 function ActionSummaryBar({ toolActions }: { toolActions: ToolAction[] }) {
-  const [expanded, setExpanded] = useState(false)
   const filesWritten = toolActions.filter(a => a.name === 'write_file' || a.name === 'edit_file').length
   const filesExplored = toolActions.filter(a => a.name === 'read_file' || a.name === 'list_directory' || a.name === 'search_files').length
   const commandsRun = toolActions.filter(a => a.name === 'execute_code').length
   const searches = toolActions.filter(a => a.name === 'web_search').length
+
   if (filesWritten === 0 && filesExplored === 0 && commandsRun === 0 && searches === 0) return null
-  const allDone = toolActions.every(a => a.success === true)
+
   return (
-    <div className="my-2 space-y-1">
-      <button onClick={() => setExpanded(!expanded)} className="flex w-full items-center gap-2 rounded-md border border-zinc-700/40 bg-zinc-800/30 px-3 py-1.5 text-left hover:bg-zinc-800/50 transition-colors">
-        {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-zinc-500" /> : <ChevronRight className="h-3 w-3 shrink-0 text-zinc-500" />}
-        <div className="flex flex-wrap items-center gap-1.5 flex-1">
-          {filesWritten > 0 && (<div className="flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-400"><FilePen className="h-2.5 w-2.5" /><span className="font-medium">{filesWritten} file{filesWritten !== 1 ? 's' : ''} written</span></div>)}
-          {filesExplored > 0 && (<div className="flex items-center gap-1 rounded bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-400"><FolderOpen className="h-2.5 w-2.5" /><span className="font-medium">Explored {filesExplored}</span></div>)}
-          {commandsRun > 0 && (<div className="flex items-center gap-1 rounded bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 text-[10px] text-orange-400"><Terminal className="h-2.5 w-2.5" /><span className="font-medium">Ran {commandsRun} command{commandsRun !== 1 ? 's' : ''}</span></div>)}
-          {searches > 0 && (<div className="flex items-center gap-1 rounded bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 text-[10px] text-cyan-400"><Zap className="h-2.5 w-2.5" /><span className="font-medium">{searches} search{searches !== 1 ? 'es' : ''}</span></div>)}
+    <div className="flex flex-wrap gap-1.5 my-2">
+      {filesWritten > 0 && (
+        <div className="flex items-center gap-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 text-[10px] text-emerald-400">
+          <FilePen className="h-3 w-3" />
+          <span className="font-medium">{filesWritten} file{filesWritten !== 1 ? 's' : ''} written</span>
         </div>
-        {allDone && (<div className="flex items-center gap-1 text-[10px] text-zinc-500 shrink-0"><CheckCircle2 className="h-2.5 w-2.5 text-emerald-400" /><span>Done</span></div>)}
-      </button>
-      {expanded && (<div className="ml-4 space-y-1 border-l border-zinc-700/30 pl-3">{toolActions.map((action, i) => (<ToolCallCard key={i} action={action} index={i} />))}</div>)}
+      )}
+      {filesExplored > 0 && (
+        <div className="flex items-center gap-1 rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-1 text-[10px] text-sky-400">
+          <FolderOpen className="h-3 w-3" />
+          <span className="font-medium">{filesExplored} explored</span>
+        </div>
+      )}
+      {commandsRun > 0 && (
+        <div className="flex items-center gap-1 rounded-md bg-orange-500/10 border border-orange-500/20 px-2 py-1 text-[10px] text-orange-400">
+          <Terminal className="h-3 w-3" />
+          <span className="font-medium">{commandsRun} command{commandsRun !== 1 ? 's' : ''}</span>
+        </div>
+      )}
+      {searches > 0 && (
+        <div className="flex items-center gap-1 rounded-md bg-cyan-500/10 border border-cyan-500/20 px-2 py-1 text-[10px] text-cyan-400">
+          <Zap className="h-3 w-3" />
+          <span className="font-medium">{searches} search{searches !== 1 ? 'es' : ''}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -391,13 +404,10 @@ function StreamingContent({
   todos: TodoItem[]
 }) {
   // Extract thinking content
-  // Z.ai-style: capture the thought content directly if it's in the text
   const thinkMatch = content.match(/\[TOOL_RESULT\]\s+think\s*\n([\s\S]*?)(?=\n\n\[TOOL_|\n\n\[ERROR\]|$)/)
-    || content.match(/^(?!\[TOOL_|think\()(\S[\s\S]*?)(?=\n\n▾|\n\nExplored|\n\nWrote|\n\nRan|$)/m)
   const thinkingText = thinkMatch ? thinkMatch[1].trim() : ''
 
   // Strip tool call/result blocks and markers for the main text display
-  // Z.ai-style: aggressively clean ALL raw tool syntax from chat
   const cleanContent = content
     .replace(/\[TOOL_CALL\]\s+\w+\(\{[\s\S]*?\}\)/g, '')
     .replace(/\[TOOL_RESULT\]\s+\w+\n[\s\S]*?(?=\n\n|\[TOOL_|$)/g, '')
@@ -408,13 +418,6 @@ function StreamingContent({
     .replace(/\[ERROR\]/g, '')
     .replace(/__METADATA__[\s\S]*?__END_METADATA__/g, '')
     .replace(/\[TERMINAL\]\s+\w+\s+.+/g, '')
-    // ── FIX: Strip raw think() calls that leak into chat ──
-    .replace(/think\(\{"thought":\s*"?([\s\S]*?)"?\}\)<\/arg_value><\/tool_call>/g, '')
-    .replace(/think\(\{[\s\S]*?\}\)<\/arg_value><\/tool_call>/g, '')
-    .replace(/think\(\{"thought":\s*"([\s\S]*?)"\}\)/g, '')
-    .replace(/think\(\{[\s\S]*?\}\)/g, '')
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<arg_value>[\s\S]*?<\/arg_value>/g, '')
     .trim()
 
   // Separate code file blocks from the display content
@@ -436,7 +439,14 @@ function StreamingContent({
       {/* Todos panel */}
       <TodosPanel todos={todos} />
 
-      {/* Z.ai-style: Tool calls are now INSIDE the ActionSummaryBar */}
+      {/* Tool calls panel */}
+      {toolActions.length > 0 && (
+        <div className="space-y-1 mt-2">
+          {toolActions.map((action, i) => (
+            <ToolCallCard key={i} action={action} index={i} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -634,10 +644,7 @@ export function AgentChat() {
     setActiveFile,
     addTerminalLine,
     setPreviewHtml,
-    globalTodos,
     setWorkspacePinned,
-    setGlobalTodos,
-    clearGlobalTodos,
   } = useAgentStore()
 
   // Derived: is the IDE workspace currently visible? Drives the pin/unpin
@@ -710,11 +717,11 @@ export function AgentChat() {
       if (res.ok) {
         const data = await res.json()
         setProject(data.project.id, data.project.name)
-        // Z.ai-style: project creation is silent in terminal
+        addTerminalLine(`info Project "${data.project.name}" created`)
       }
     } catch {
       setProject(name, name)
-      // Z.ai-style: project creation is silent in terminal
+      addTerminalLine(`info Project "${name}" created (local)`)
     }
   }, [setProject, addTerminalLine])
 
@@ -729,9 +736,6 @@ export function AgentChat() {
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || isStreaming) return
-
-    // Issue 2 Fix: Clear global todos on NEW chat
-    if (messages.length === 0) { clearGlobalTodos() }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -826,7 +830,7 @@ export function AgentChat() {
 
           case 'reasoning':
             // Show reasoning in the terminal (collapsible in future)
-            // Z.ai-style: reasoning shows in chat only, NOT in terminal
+            addTerminalLine(`💡 Reasoning: ${data.thought?.substring(0, 200)}${data.thought?.length > 200 ? '...' : ''}`)
             break
 
           case 'plan_update':
@@ -839,7 +843,6 @@ export function AgentChat() {
                   priority: step.step <= 2 ? 'high' : step.step <= 4 ? 'med' : 'low',
                 }))
                 setMessageTodos(prev => ({ ...prev, [assistantMessage.id]: planTodos }))
-                setGlobalTodos(planTodos)
               }
             } catch (e) {
               console.warn('[Agent Chat] Failed to parse plan_update event:', e)
@@ -867,13 +870,6 @@ export function AgentChat() {
                   }
                   return { ...prev, [assistantMessage.id]: todos.map((t: any) => ({ text: t.text, done: t.done, priority: t.priority })) }
                 })
-                const currentGlobalTodos = useAgentStore.getState().globalTodos
-                if (currentGlobalTodos.length > 0) {
-                  const existingTexts = new Set(currentGlobalTodos.map(t => t.text.toLowerCase()))
-                  const merged = [...currentGlobalTodos]
-                  for (const t of todos as any[]) { if (!existingTexts.has(t.text.toLowerCase())) merged.push({ text: t.text, done: t.done, priority: t.priority, filePath: t.filePath }) }
-                  setGlobalTodos(merged)
-                } else { setGlobalTodos(todos.map((t: any) => ({ text: t.text, done: t.done, priority: t.priority, filePath: t.filePath }))) }
               }
             } catch (e) {
               console.warn('[Agent Chat] Failed to parse todo_update event:', e)
@@ -882,7 +878,7 @@ export function AgentChat() {
 
           case 'tool_call':
             // Terminal log for tool calls
-            // Z.ai-style: tool calls show in CHAT as action badges, NOT in terminal
+            addTerminalLine(`🔧 ${data.name}(${Object.keys(data.params || {}).join(', ')})`)
 
             // ── AUTO-SWITCH TO TERMINAL TAB WHEN AGENT RUNS A COMMAND ──
             // When the agent invokes `execute_code`, the user wants to see the
@@ -898,7 +894,7 @@ export function AgentChat() {
           case 'tool_result': {
             const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2).substring(0, 500)
             if (!data.success) {
-              // Z.ai-style: tool failures show in CHAT
+              addTerminalLine(`❌ ${data.name} failed`)
             }
             break
           }
@@ -978,14 +974,11 @@ export function AgentChat() {
             break
 
           case 'terminal':
-            // Z.ai-style: terminal is ONLY for command output
-            if (data.message && data.message.startsWith('$')) {
-              addTerminalLine(data.message)
-            }
+            addTerminalLine(`${data.level === 'error' ? '❌' : data.level === 'warn' ? '⚠️' : data.level === 'success' ? '✅' : 'ℹ️'} ${data.message}`)
             break
 
           case 'validation_error':
-            // Z.ai-style: validation errors show in CHAT
+            addTerminalLine(`❌ validation: ${data.toolName} — ${data.error}`)
             break
 
           case 'metadata':
@@ -993,7 +986,7 @@ export function AgentChat() {
             break
 
           case 'error':
-            // Z.ai-style: errors show in CHAT
+            addTerminalLine(`❌ ${data.message}`)
             break
 
           case 'done':
@@ -1111,7 +1104,7 @@ export function AgentChat() {
       const finalFileCount = trackedFileCount > 0
         ? trackedFileCount
         : allParsedFiles.filter(f => f.path !== '__preview.html').length
-      // Z.ai-style: build complete shows in chat only
+      addTerminalLine(`success Build complete! ${finalFileCount} files generated.`)
       setAgentStatus('idle')
     } catch (error: unknown) {
       const err = error as Error
@@ -1124,7 +1117,7 @@ export function AgentChat() {
           content: 'Generation stopped by user.',
           timestamp: Date.now(),
         })
-        // Z.ai-style: abort shows in CHAT
+        addTerminalLine('warn Generation stopped by user.')
         setAgentStatus('idle')
       } else {
         setAgentStatus('error')
@@ -1138,7 +1131,7 @@ export function AgentChat() {
           content: msg,
           timestamp: Date.now(),
         })
-        // Z.ai-style: errors show in CHAT
+        addTerminalLine(`error ${msg}`)
       }
     } finally {
       setStreaming(false)
@@ -1317,10 +1310,6 @@ export function AgentChat() {
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Z.ai-style: Todos render inline, NOT sticky/blocking */}
-            {globalTodos && globalTodos.length > 0 && (
-              <TodosPanel todos={globalTodos} />
-            )}
             {messages.map((message) => (
               <MessageBubble
                 key={message.id}

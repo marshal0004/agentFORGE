@@ -107,9 +107,7 @@ interface AutoTodo {
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-// Z.ai-style sequential execution
-const SEQUENTIAL_TOOL_EXECUTION = process.env.SEQUENTIAL_TOOL_EXECUTION !== 'false'
-const MAX_TOOL_ITERATIONS = SEQUENTIAL_TOOL_EXECUTION ? 150 : 50
+const MAX_TOOL_ITERATIONS = 50
 const MAX_VERIFICATION_RETRIES = 3    // Issue 1: How many times to re-inject if LLM stops prematurely
 // ZAI-only models — these are ONLY used by the ZAI provider.
 // Other providers (NVIDIA, OpenRouter, Ollama) use their own configured models.
@@ -694,10 +692,13 @@ PHASE 1 — PLAN (use the think tool FIRST — this is NOT optional):
   Format: Step N: [What] - Output: [file path] - Test: [How to verify]
   You can also use: N. [What] → [file path]  or  - [What] → [file path]
 
-PHASE 2 — CREATE FILES (ONE file per response, sequential execution):
-  Create project files using write_file. Issue EXACTLY ONE write_file call per response.
-  After each file is written, the system will show you the result so you can verify it
-  before writing the next file. This matches Z.ai agent mode behavior.
+PHASE 2 — CREATE FILES (batch multiple write_file calls):
+  Create ALL project files using write_file. Batch MULTIPLE files per iteration.
+  Example of CORRECT behavior (4 files in one response):
+    write_file({"path": "src/index.html", "content": "..."})
+    write_file({"path": "src/styles.css", "content": "..."})
+    write_file({"path": "src/app.js", "content": "..."})
+    write_file({"path": "package.json", "content": "..."})
 
 PHASE 3 — INSTALL DEPENDENCIES (use execute_code — NOT manual instructions):
   ⚠️ CRITICAL: You have FULL terminal access. You MUST run commands yourself.
@@ -999,7 +1000,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                 text: s.text,
                 output: s.output,
                 test: s.test,
-                done: writtenFilesTracker.has(s.output) || [...writtenFilesTracker.keys()].some(p => p.endsWith(s.output) || s.output.endsWith(p)),
+                done: writtenFilesTracker.has(s.output),
               })))
             } catch { /* don't break stream */ }
           }
@@ -1024,9 +1025,6 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
           iteration++
           // v1.2: keep PlanTracker iteration count in sync so isStalled() works.
           try { planTracker.incrementIteration() } catch { /* best-effort */ }
-
-          // Issue 2 Fix: Heartbeat todo emission
-          try { emitPlanUpdate() } catch { /* don't break loop */ }
 
           agentEventBus.emit('agent:iteration', {
             sessionId: activeSessionId || 'anonymous',
@@ -1102,7 +1100,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                   // Last model in chain also failed — rethrow
                   throw modelErr
                 }
-                // sse.terminal('warn', `"Model '" + tryModel + "' failed, trying fallback..."`)
+                sse.terminal('warn', "Model '" + tryModel + "' failed, trying fallback...")
               }
             }
 
@@ -1344,8 +1342,10 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
             continue  // Continue the loop to let LLM retry
           }
 
-          // ── Execute tool calls — SEQUENTIAL or PARALLEL mode ──────────
-          const allValidatedCalls: ParallelToolCall[] = validationResult.valid.map((tc, idx) => ({
+          // ── Execute tool calls in PARALLEL ─────────────────────────────
+
+          // Use validated calls (with corrected params) instead of raw calls
+          const parallelCalls: ParallelToolCall[] = validationResult.valid.map((tc, idx) => ({
             id: tc.id,
             toolName: tc.toolName,
             params: {
@@ -1355,19 +1355,6 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                 : {}),
             },
           }))
-
-          const parallelCalls: ParallelToolCall[] = SEQUENTIAL_TOOL_EXECUTION
-            ? allValidatedCalls.slice(0, 1)
-            : allValidatedCalls
-
-          const skippedCalls = SEQUENTIAL_TOOL_EXECUTION
-            ? allValidatedCalls.slice(1)
-            : []
-
-          if (skippedCalls.length > 0) {
-            console.log(`[Agent Loop] Sequential mode: executing 1 of ${allValidatedCalls.length} tool calls, ${skippedCalls.length} queued`)
-            sse.terminal('info', `Sequential mode: executing 1 of ${allValidatedCalls.length} tool calls (${skippedCalls.length} queued)`)
-          }
 
           // Also need to handle rejected calls — create error results for them
           const rejectedResults = validationResult.rejected.map(r => ({
@@ -1415,7 +1402,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
               sessionId: activeSessionId,
               projectId,
               iteration,
-              maxConcurrency: SEQUENTIAL_TOOL_EXECUTION ? 1 : 5,
+              maxConcurrency: 5,
             })) {
               allResults.push(tr)
 
@@ -1478,7 +1465,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                     const tcResult = await typecheckAfterEdit(fullPath)
                     if (tcResult.hasErrors) {
                       const warning = formatTypecheckForToolResult(tcResult)
-                      if (warning) { /* terminal silenced */ }
+                      if (warning) sse.terminal('warn', warning.substring(0, 1000))
                     }
                   } catch { /* best-effort */ }
                 }
@@ -1541,18 +1528,18 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                 const errorPath = matchedCall?.params.path
                   ? String(matchedCall.params.path)
                   : (result?.path ? String(result.path) : 'unknown')
-                // sse.terminal('error', 'write_file: ' + errorPath + ' — ' + (result?.error || matchedRejected?.error || 'validation failed'))
+                sse.terminal('error', 'write_file: ' + errorPath + ' — ' + (result?.error || matchedRejected?.error || 'validation failed'))
               } else {
                 const displayPath = result?.relativePath
                   || (matchedCall?.params.path ? String(matchedCall.params.path) : null)
                   || (result?.path ? String(result.path).split('/').slice(-3).join('/') : 'unknown')
                 const bytes = result?.bytesWritten || 0
-                // sse.terminal('success', 'write_file: ' + displayPath + ' (' + bytes + ' bytes)')
+                sse.terminal('success', 'write_file: ' + displayPath + ' (' + bytes + ' bytes)')
               }
             } else if (tr.toolName === 'list_directory') {
               const entries = ((tr.result as any)?.entries || []) as Array<{name: string; type: string}>
               const entryList = entries.map(e => (e.type === 'directory' ? 'd' : 'f') + ' ' + e.name).join(', ')
-              // // sse.terminal('info', 'list_directory: ' + (entryList || '(empty)'))
+              sse.terminal('info', 'list_directory: ' + (entryList || '(empty)'))
             } else if (tr.toolName === 'read_file') {
               const result = tr.result as any
               const filePath = matchedCall?.params.path
@@ -1561,7 +1548,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
               const contentLength = typeof tr.result === 'string'
                 ? tr.result.length
                 : (result?.content?.length || 0)
-              // // sse.terminal('info', 'read_file: ' + filePath + ' (' + contentLength + ' chars)')
+              sse.terminal('info', 'read_file: ' + filePath + ' (' + contentLength + ' chars)')
             } else if (tr.toolName === 'edit_file') {
               const result = tr.result as any
               const filePath = matchedCall?.params.path
@@ -1571,7 +1558,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                 ? (matchedCall!.params.operations as any[]).length
                 : 0
               const success = tr.success && !(tr.result as any)?.error
-              // sse.terminal(success ? 'success' : 'error', 'edit_file: ' + filePath + ' (' + ops + ' ops)')
+              sse.terminal(success ? 'success' : 'error', 'edit_file: ' + filePath + ' (' + ops + ' ops)')
             }
             } // end for-await
           } catch (streamExecErr) {
@@ -1629,12 +1616,8 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
             ? `\n\n⚠️ CRITICAL: You have explored ${exploredFiles.size} files but created ZERO project files. STOP reading. Call write_file NOW to create the project.`
             : ''
 
-          const skippedCallsHint = skippedCalls.length > 0
-            ? `\n\n⏳ SEQUENTIAL MODE: You issued ${allValidatedCalls.length} tool calls but only the FIRST was executed. The remaining ${skippedCalls.length} call(s) were SKIPPED. Reissue them ONE AT A TIME.`
-            : ''
-
           const continuationHint = iteration < MAX_TOOL_ITERATIONS - 1
-            ? `${previouslyWrittenMatch}${planProgressHint}${exploredSummary}${noFilesWrittenYet}${skippedCallsHint}\n\nNEXT ACTION: ${SEQUENTIAL_TOOL_EXECUTION ? 'Issue exactly ONE tool call in your next response.' : 'Create the REMAINING files from your plan.'}`
+            ? `${previouslyWrittenMatch}${planProgressHint}${exploredSummary}${noFilesWrittenYet}\n\nNEXT ACTION: Create the REMAINING files from your plan. Batch MULTIPLE write_file calls in ONE response. If all files are done, respond with a summary and no tool calls.`
             : 'This is the last iteration. Summarize what was created.'
 
           const newMessages: LLMChatMessage[] = []
@@ -1752,7 +1735,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
               console.warn(
                 `[Agent Loop] STUCK DETECTED: Same files rewritten ${consecutiveDuplicateWrites} times. Breaking loop.`,
               )
-              // sse.terminal('warn', `'Agent loop detected stuck behavior (rewriting same files repeatedly`). Stopping to prevent infinite loop.')
+              sse.terminal('warn', 'Agent loop detected stuck behavior (rewriting same files repeatedly). Stopping to prevent infinite loop.')
               break
             }
 
@@ -2001,21 +1984,12 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
           })
         }
 
-        // Issue 2 Fix: Final todo flush
-        try {
-          emitPlanUpdate()
-          const finalAutoTodos = generateAutoTodosFromWrites(writtenFilesTracker, planSteps)
-          if (finalAutoTodos.length > 0) {
-            sse.todoUpdate(finalAutoTodos.map((t, i) => ({ text: t.text, done: true, filePath: t.filePath, priority: i <= 2 ? 'high' : i <= 4 ? 'med' : 'low' })))
-          }
-        } catch { /* don't break stream */ }
-
         // ── Emit completion event ─────────────────────────────────────────
 
         // Post-loop check: warn if no preview was created
         const hasPreviewFile = writtenFilesTracker.has('__preview.html')
         if (!hasPreviewFile && writtenFilesTracker.size > 0) {
-          // sse.terminal('warn', `⚠️ No __preview.html was created. The user won't see a live preview. Consider creating one for instant preview.`)
+          sse.terminal('warn', `⚠️ No __preview.html was created. The user won't see a live preview. Consider creating one for instant preview.`)
           console.warn('[Agent Loop] No __preview.html was created. User may not see a preview.')
         }
 
@@ -2078,7 +2052,7 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
                 })
               }
             } else {
-              // sse.terminal('warn', `Verification: timed out after 5 minutes. Skipping full build/typecheck phases.`)
+              sse.terminal('warn', `Verification: timed out after 5 minutes. Skipping full build/typecheck phases.`)
             }
           } catch (verifyError) {
             // Verification must never break the completion flow.
@@ -2094,13 +2068,13 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
             const wsRoot = path.resolve(process.cwd(), 'workspace')
             const pDir = path.join(wsRoot, projectId)
             const planned = planTracker.getPlannedFiles().length > 0 ? planTracker.getPlannedFiles() : [...writtenFilesTracker.keys()]
-            // // sse.terminal('info', 'Running 6-phase verification (Build→Types→Lint→Tests→Security→Diff)...')
+            sse.terminal('info', 'Running 6-phase verification (Build→Types→Lint→Tests→Security→Diff)...')
             const vl = await runVerificationLoop(pDir, planned)
-            // sse.terminal(vl.overall === 'READY' ? 'success' : 'warn', `Verification: ${vl.overall} — ${vl.passedCount} pass, ${vl.failedCount} fail, ${vl.skippedCount} skip (${vl.totalDurationMs}ms)`)
-            // try { sse.terminal('info', vl.report.substring(0, 1500)) } catch { /* SSE safety */ }
+            sse.terminal(vl.overall === 'READY' ? 'success' : 'warn', `Verification: ${vl.overall} — ${vl.passedCount} pass, ${vl.failedCount} fail, ${vl.skippedCount} skip (${vl.totalDurationMs}ms)`)
+            try { sse.terminal('info', vl.report.substring(0, 1500)) } catch { /* SSE safety */ }
             // v1.3: ECC Pattern #2 — build-error-resolver if verification found failures
             if (vl.failedCount > 0) {
-              // sse.terminal('info', 'Invoking build-error-resolver (max 3 attempts per error)...')
+              sse.terminal('info', 'Invoking build-error-resolver (max 3 attempts per error)...')
               try {
                 const fr = await resolveBuildErrors({ ...DEFAULT_BUILD_FIX_CONFIG, workspaceDir: pDir, projectId })
                 sse.terminal(fr.resolved ? 'success' : 'warn', `Build fix: ${fr.report.substring(0, 400)}`)
@@ -2114,9 +2088,9 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
           try {
             const wsRoot = path.resolve(process.cwd(), 'workspace')
             const pDir = path.join(wsRoot, projectId)
-            // // sse.terminal('info', 'Running code review (Pre-Report Gate + false-positive filtering)...')
+            sse.terminal('info', 'Running code review (Pre-Report Gate + false-positive filtering)...')
             const rr = await reviewProject({ projectId, workspaceDir: pDir, minConfidence: 0.8, blockOnCritical: true })
-            // sse.terminal(rr.verdict === 'BLOCK' ? 'error' : rr.verdict === 'WARNING' ? 'warn' : 'success', `Code review: ${rr.verdict} — ${rr.findings.length} finding(s) in ${rr.filesReviewed} file(s)`)
+            sse.terminal(rr.verdict === 'BLOCK' ? 'error' : rr.verdict === 'WARNING' ? 'warn' : 'success', `Code review: ${rr.verdict} — ${rr.findings.length} finding(s) in ${rr.filesReviewed} file(s)`)
             if (rr.findings.length > 0) { const top = rr.findings.slice(0, 5).map(f => `[${f.severity.toUpperCase()}] ${f.file}:${f.line} — ${f.message.substring(0, 80)}`); sse.terminal('info', `Top findings:\n${top.join('\n')}`) }
           } catch (e) { sse.terminal('warn', `Code review error: ${String(e).substring(0, 200)}`) }
         }
@@ -2124,10 +2098,10 @@ Remember: PLAN → CREATE FILES → INSTALL DEPS (execute_code) → BUILD (execu
         // v1.3: ECC Pattern #11 — agent self-evaluation (5-axis rubric).
         if (fullResponse.length > 0) {
           try {
-            // // sse.terminal('info', 'Running agent self-evaluation (5-axis rubric)...')
+            sse.terminal('info', 'Running agent self-evaluation (5-axis rubric)...')
             const se = await evaluateAgentOutput({ agentResponse: fullResponse, filesWritten: [...writtenFilesTracker.keys()], buildSucceeded: true, testsPassed: true, typecheckPassed: true, lintPassed: true, workspaceDir: projectId ? path.resolve(process.cwd(), 'workspace', projectId) : undefined })
-            // sse.terminal(se.verdict === 'deliver-as-is' ? 'success' : se.verdict === 'fix-issues-then-deliver' ? 'warn' : 'error', `Self-eval: ${se.verdict} — ${se.totalScore}/${se.maxTotalScore} (${se.percentage.toFixed(1)}%)`)
-            // if (se.topImprovements.length > 0) sse.terminal('info', `Improvements:\n${se.topImprovements.map((i, n) => `${n + 1}. ${i}`).join('\n')}`)
+            sse.terminal(se.verdict === 'deliver-as-is' ? 'success' : se.verdict === 'fix-issues-then-deliver' ? 'warn' : 'error', `Self-eval: ${se.verdict} — ${se.totalScore}/${se.maxTotalScore} (${se.percentage.toFixed(1)}%)`)
+            if (se.topImprovements.length > 0) sse.terminal('info', `Improvements:\n${se.topImprovements.map((i, n) => `${n + 1}. ${i}`).join('\n')}`)
           } catch (e) { sse.terminal('warn', `Self-eval error: ${String(e).substring(0, 200)}`) }
         }
 

@@ -24,13 +24,6 @@ export interface ProjectFile {
   language: string
 }
 
-export interface TodoItem {
-  text: string
-  done: boolean
-  priority?: string
-  filePath?: string
-}
-
 export interface AgentState {
   messages: ChatMessage[]
   isStreaming: boolean
@@ -93,10 +86,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   previewHtml: null,
   agentStatus: 'idle',
   abortController: null,
-  globalTodos: [],
-
-  setGlobalTodos: (todos) => set({ globalTodos: todos }),
-  clearGlobalTodos: () => set({ globalTodos: [] }),
   workspacePinned: null,
 
   addMessage: (message) =>
