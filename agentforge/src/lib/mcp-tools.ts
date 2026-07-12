@@ -428,16 +428,26 @@ export async function invokeWriteFile(params: Record<string, unknown>) {
     resolvedPath = resolution.resolvedPath
     resolvedRelativePath = resolution.relativePath
   } else {
-    // No projectId — resolve relative to CWD (legacy behavior)
+    // CRITICAL FIX: No projectId — resolve relative to workspace/default
+    const workspaceRoot = path.resolve(process.cwd(), 'workspace')
+    const defaultDir = path.join(workspaceRoot, 'default')
     resolvedPath = path.isAbsolute(filePath)
       ? filePath
-      : path.resolve(process.cwd(), filePath)
+      : path.resolve(defaultDir, filePath)
+  }
 
-    // Basic path traversal protection
-    if (resolvedPath.includes('..')) {
-      return { error: 'Path traversal is not allowed', path: filePath }
+  // ===== CONTAINMENT CHECK (closes absolute-path bypass) =====
+  const workspaceRootGlobal = path.resolve(process.cwd(), 'workspace')
+  const relativeToWorkspace = path.relative(workspaceRootGlobal, resolvedPath)
+  if (relativeToWorkspace.startsWith('..') || path.isAbsolute(relativeToWorkspace)) {
+    return {
+      error: 'Sandbox violation: path escapes workspace directory',
+      path: filePath,
+      resolvedPath,
+      workspaceRoot: workspaceRootGlobal,
     }
   }
+  // ===== END CONTAINMENT CHECK =====
 
   try {
     // Ensure the directory exists

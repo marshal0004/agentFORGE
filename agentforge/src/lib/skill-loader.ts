@@ -54,11 +54,6 @@ export interface SkillContent {
  */
 const CORE_CHAR_LIMITS: Record<string, number> = {
   'coding-agent':   20_000,
-  'fullstack-dev':  20_000,
-  'ui-ux-pro-max':  15_000,
-  'agent-browser':  12_000,
-  'skill-creator':  12_000,
-  'skill-vetter':    6_000,
 }
 
 
@@ -201,56 +196,6 @@ const SKILL_DEFINITIONS: Array<{
     dataDirs: [],
     refDirs: [],
   },
-  {
-    name: 'fullstack-dev',
-    slug: 'fullstack',
-    description: 'Production-grade fullstack development with Next.js 16, TypeScript, Tailwind CSS 4, shadcn/ui, Django backend.',
-    priority: 'critical',
-    alwaysActive: true,
-    auxiliaryFiles: [],
-    dataDirs: [],
-    refDirs: [],
-  },
-  {
-    name: 'ui-ux-pro-max',
-    slug: 'uiux',
-    description: 'Design intelligence: color palettes, typography, UX heuristics, component specifications.',
-    priority: 'high',
-    alwaysActive: true,
-    auxiliaryFiles: [],
-    dataDirs: ['data', 'assets/data'],
-    refDirs: ['references'],
-  },
-  {
-    name: 'agent-browser',
-    slug: 'browser',
-    description: 'Headless browser automation CLI for navigating, clicking, typing, and snapshotting pages.',
-    priority: 'high',
-    alwaysActive: true,
-    auxiliaryFiles: [],
-    dataDirs: [],
-    refDirs: [],
-  },
-  {
-    name: 'skill-creator',
-    slug: 'skill-create',
-    description: 'Meta-skill for creating and improving skills.',
-    priority: 'normal',
-    alwaysActive: true,
-    auxiliaryFiles: [],
-    dataDirs: [],
-    refDirs: ['references', 'agents'],
-  },
-  {
-    name: 'skill-vetter',
-    slug: 'skill-vet',
-    description: 'Security vetting protocol for skills.',
-    priority: 'normal',
-    alwaysActive: true,
-    auxiliaryFiles: [],
-    dataDirs: [],
-    refDirs: [],
-  },
 ]
 
 // ── Embedded Fallback Prompts ──────────────────────────────────────────────────
@@ -316,35 +261,6 @@ You are a fullstack development expert specializing in:
 5. Proper TypeScript types — no \`any\` unless absolutely necessary
 6. Error boundaries and loading states for all pages
 7. Responsive design with mobile-first approach`,
-
-  'ui-ux-pro-max': `# UI/UX Design Intelligence
-
-You have deep expertise in user interface and experience design.
-
-## Design Principles
-1. Visual Hierarchy — Guide the user's eye through content importance
-2. Consistency — Use uniform spacing, colors, and typography
-3. Feedback — Every interaction should provide visual feedback
-4. Accessibility — WCAG 2.1 AA compliance minimum
-5. Mobile-first — Design for small screens, enhance for larger ones
-
-## Color System
-- Use CSS custom properties for theming
-- Primary, secondary, accent, muted, destructive variants
-- Support both light and dark modes
-- Maintain 4.5:1 contrast ratio for text
-
-## Typography
-- Use system font stack or Google Fonts via next/font
-- Scale: 12/14/16/18/20/24/30/36/48/60/72px
-- Line height: 1.5 for body, 1.2 for headings
-
-## Component Patterns
-- Cards with consistent padding (p-6) and border-radius (rounded-lg)
-- Buttons with clear states (default, hover, active, disabled, loading)
-- Forms with inline validation and clear error messages
-- Navigation with active state indicators`,
-
   'agent-browser': `# Agent Browser
 
 Headless browser automation CLI for navigating, clicking, typing, and snapshotting pages.
@@ -364,50 +280,6 @@ Headless browser automation CLI for navigating, clicking, typing, and snapshotti
 3. Interact with elements using CSS selectors
 4. Always wait for dynamic content to load before interacting
 5. Take snapshots after significant interactions to verify state`,
-
-  'skill-creator': `# Skill Creator
-
-Meta-skill for creating and improving other skills.
-
-## Skill Structure
-A skill consists of:
-1. SKILL.md — Main skill definition with instructions
-2. Auxiliary .md files — Detailed sub-instructions
-3. Data files — CSV/JSON reference data
-4. Reference documents — Extended documentation
-
-## Creating a Skill
-1. Define the skill's purpose and scope
-2. Write clear, actionable instructions in SKILL.md
-3. Include concrete examples and patterns
-4. Add validation criteria for skill outputs
-5. Test the skill with real prompts
-
-## Skill Quality Criteria
-- Instructions must be unambiguous
-- Examples must be concrete and copy-pasteable
-- Edge cases must be covered
-- No placeholder or TODO content`,
-
-  'skill-vetter': `# Skill Vetter
-
-Security and quality vetting protocol for skills.
-
-## Vetting Checklist
-1. No executable code that runs outside sandbox
-2. No network requests to unknown endpoints
-3. No file system access beyond designated directories
-4. No environment variable leakage
-5. No prompt injection vulnerabilities
-6. Clear scope boundaries defined
-7. No recursive self-improvement loops
-8. Resource usage within acceptable limits
-
-## Quality Standards
-- Instructions are deterministic and repeatable
-- Output format is well-defined
-- Error handling is specified
-- Performance characteristics documented`,
 }
 
 // ── Skill Cache ────────────────────────────────────────────────────────────────
@@ -469,7 +341,7 @@ async function findSkillDir(skillName: string): Promise<string | null> {
     }
   }
 
-  console.warn(`[SkillLoader] Skill '${skillName}' not found on disk among ${uniqueCandidates.length} candidates — using embedded fallback`)
+  // Skill not found on disk — skipping (embedded fallbacks disabled)
   return null
 }
 
@@ -597,11 +469,13 @@ function smartTruncate(content: string, maxChars: number, skillName: string): st
  * has skill instructions, even when deployed without the skills/ directory.
  */
 function buildEmbeddedSkill(skillDef: typeof SKILL_DEFINITIONS[0]): SkillContent {
-  const prompt = EMBEDDED_SKILL_PROMPTS[skillDef.name] || `# ${skillDef.name}\n\n${skillDef.description}`
+  // BUG FIX: Embedded fallbacks are DISABLED. Only disk-loaded skills are used.
+  // This prevents the 5 noisy "not found on disk — using embedded fallback" log lines.
+  const prompt = null
   const charLimit = CORE_CHAR_LIMITS[skillDef.name] ?? 15_000
   const corePrompt = smartTruncate(prompt, charLimit, skillDef.name)
 
-  console.log(`[SkillLoader] Using embedded fallback for '${skillDef.name}' (${prompt.length} chars)`)
+  // Embedded fallback disabled
 
   return {
     name: skillDef.name,
@@ -624,7 +498,7 @@ function buildEmbeddedSkill(skillDef: typeof SKILL_DEFINITIONS[0]): SkillContent
 async function loadSkillFromDisk(skillDef: typeof SKILL_DEFINITIONS[0]): Promise<SkillContent | null> {
   const skillDir = await findSkillDir(skillDef.name)
   if (!skillDir) {
-    // KEY FIX: Return embedded fallback instead of null
+    // Embedded fallback disabled — return null to skip this skill
     return buildEmbeddedSkill(skillDef)
   }
 
@@ -872,7 +746,7 @@ export async function loadAllSkills(): Promise<SkillContent[]> {
       // Already loaded from disk — skip hardcoded version
       continue
     }
-    console.log(`[SkillLoader] Skill '${skillDef.name}' not found on disk — using embedded fallback`)
+    // Skill not on disk — skipping
     skills.push(buildEmbeddedSkill(skillDef))
   }
 
@@ -890,7 +764,7 @@ export async function loadAllSkills(): Promise<SkillContent[]> {
  */
 export async function getSkill(name: string): Promise<SkillContent | null> {
   const skills = await loadAllSkills()
-  return skills.get(name) || null
+  return skills.find(s => s.name === name) || null
 }
 
 /**
@@ -904,7 +778,7 @@ export async function buildActiveSkillsPrompt(): Promise<string> {
 
   // Sort: critical first, then high, then normal
   const priorityOrder: Record<string, number> = { critical: 0, high: 1, normal: 2 }
-  const sortedSkills = [...skills.values()].sort((a, b) => {
+  const sortedSkills = [...skills].sort((a, b) => {
     const pa = priorityOrder[a.priority] ?? 3
     const pb = priorityOrder[b.priority] ?? 3
     if (pa !== pb) return pa - pb
@@ -942,7 +816,7 @@ ${skill.corePrompt}
  */
 export async function getFullSkillPrompt(skillName: string): Promise<string | null> {
   const skills = await loadAllSkills()
-  const skill = skills.get(skillName)
+  const skill = skills.find(s => s.name === skillName)
   return skill?.fullPrompt ?? null
 }
 
@@ -954,7 +828,7 @@ export async function getSkillAuxiliaryFile(
   filePath: string
 ): Promise<string | null> {
   const skills = await loadAllSkills()
-  const skill = skills.get(skillName)
+  const skill = skills.find(s => s.name === skillName)
   if (!skill) return null
   return skill.auxiliaryFiles.get(filePath) ?? null
 }
@@ -964,7 +838,7 @@ export async function getSkillAuxiliaryFile(
  */
 export async function getLoadedSkillCount(): Promise<number> {
   const skills = await loadAllSkills()
-  return skills.size
+  return skills.length
 }
 
 /**

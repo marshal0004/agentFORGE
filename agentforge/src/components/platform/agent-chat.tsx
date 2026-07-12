@@ -749,7 +749,16 @@ export function AgentChat() {
     abortControllerRef.current = abortController
 
     // Auto-create project if none exists
-    let projectId = currentProject
+    // FIX: Treat the string "null", "undefined", or empty as no project.
+    // Stale localStorage can persist these bogus values from earlier sessions,
+    // causing projectId="null" to be sent to the backend (FK violations +
+    // files landing in workspace/null/).
+    let projectId = (currentProject
+      && currentProject !== 'null'
+      && currentProject !== 'undefined'
+      && currentProject.trim() !== '')
+      ? currentProject
+      : null
     if (!projectId) {
       try {
         const projectName = input.trim().split(' ').slice(0, 4).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
@@ -880,26 +889,44 @@ export function AgentChat() {
             }
             break
 
-          case 'tool_call':
-            // Terminal log for tool calls
-            // Z.ai-style: tool calls show in CHAT as action badges, NOT in terminal
+          case 'tool_call': {
+            // Z.ai-style: Track tool calls for ActionSummaryBar rendering
+            setMessageToolActions(prev => {
+              const existing = prev[assistantMessage.id] || []
+              const newAction = {
+                name: data.name,
+                params: data.params || {},
+                timestamp: Date.now(),
+                success: undefined as boolean | undefined,
+              }
+              return { ...prev, [assistantMessage.id]: [...existing, newAction] }
+            })
 
-            // ── AUTO-SWITCH TO TERMINAL TAB WHEN AGENT RUNS A COMMAND ──
-            // When the agent invokes `execute_code`, the user wants to see the
-            // live command output. Switch the right-pane tab to "terminal"
-            // via the same window event the backend uses for `switch_tab`.
+            // Auto-switch to terminal tab only for execute_code
             if (data.name === 'execute_code' && typeof window !== 'undefined') {
               window.dispatchEvent(
                 new CustomEvent('agentforge:switch-tab', { detail: { tab: 'terminal' } }),
               )
             }
             break
+          }
+            break
 
           case 'tool_result': {
             const resultStr = typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2).substring(0, 500)
-            if (!data.success) {
-              // Z.ai-style: tool failures show in CHAT
-            }
+
+            // Z.ai-style: Update the matching tool action with success/failure status
+            setMessageToolActions(prev => {
+              const existing = prev[assistantMessage.id] || []
+              const updated = [...existing]
+              for (let i = updated.length - 1; i >= 0; i--) {
+                if (updated[i].name === data.name && updated[i].success === undefined) {
+                  updated[i] = { ...updated[i], success: data.success, result: resultStr }
+                  break
+                }
+              }
+              return { ...prev, [assistantMessage.id]: updated }
+            })
             break
           }
 

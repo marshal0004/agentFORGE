@@ -233,7 +233,7 @@ class ZAIProvider implements LLMProvider {
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools
       body.tool_choice = 'auto'
-      body.parallel_tool_calls = false  // Z.ai-style: one tool per response
+      body.parallel_tool_calls = true   // FIX: Enable parallel tool calls — allows LLM to batch 10+ calls per response
     }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -304,7 +304,7 @@ class ZAIProvider implements LLMProvider {
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools
       body.tool_choice = 'auto'
-      body.parallel_tool_calls = false  // Z.ai-style: one tool per response
+      body.parallel_tool_calls = true   // FIX: Enable parallel tool calls — allows LLM to batch 10+ calls per response
     }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -446,7 +446,7 @@ class OpenAICompatibleProvider implements LLMProvider {
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools
       body.tool_choice = 'auto'
-      body.parallel_tool_calls = false  // Z.ai-style: one tool per response
+      body.parallel_tool_calls = true   // FIX: Enable parallel tool calls — allows LLM to batch 10+ calls per response
     }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -518,7 +518,7 @@ class OpenAICompatibleProvider implements LLMProvider {
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools
       body.tool_choice = 'auto'
-      body.parallel_tool_calls = false  // Z.ai-style: one tool per response
+      body.parallel_tool_calls = true   // FIX: Enable parallel tool calls — allows LLM to batch 10+ calls per response
     }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {

@@ -58,3 +58,23 @@ model MCPServer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ── Coding Agent Memory ──
+model AgentMemory {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  content     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Uploaded Skill Files ──
+model UploadedSkill {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  files       String   @default("{}")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
